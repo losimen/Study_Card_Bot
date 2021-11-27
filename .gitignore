@@ -1,0 +1,13 @@
+/shelf/
+/workspace.xml
+/out/
+/.vs/
+/.idea
+/vcpkg/
+/Logger/
+/xcode/
+/cmake-build-debug/
+*.user
+Database.conf
+CMakeFiles
+CMakeCache.txt
