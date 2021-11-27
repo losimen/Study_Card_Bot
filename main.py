@@ -1,16 +1,118 @@
 import telebot
 import config
-import time
+import uuid
+import copy
 from telebot import types
 
 bot = telebot.TeleBot(config.TOKEN)
+questions = {}
+sessions = {}
+
+
+def get_competitor_id(user_id, session_id):
+    temp_session = copy.deepcopy(sessions)
+    temp_session[session_id].remove(user_id)
+
+    return temp_session[session_id][0]
+
+
+def check_answer(message, session_id):
+    competitor_id = get_competitor_id(message.chat.id, session_id)
+
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+
+    button1 = types.InlineKeyboardButton("✅True", callback_data='answer_true')
+    button2 = types.InlineKeyboardButton("👎False", callback_data='answer_false')
+
+    keyboard.add(button1, button2)
+
+    bot.send_message(competitor_id, "<b>Opponent answer: </b>" + message.text, reply_markup=keyboard, parse_mode='html')
+
+    ask_question(message.chat.id, session_id)
+
+
+def ask_question(user_id, session_id):
+    competitor_id = get_competitor_id(user_id, session_id)
+
+    question = questions[user_id][0]
+
+    if len(questions[user_id]) == 0:
+        bot.send_message(user_id, "<b>You won🥳</b>", parse_mode='html')
+        bot.send_message(competitor_id, "<b>Opponent won🤭</b>", parse_mode='html')
+        return
+
+    bot.send_message(user_id, "You asked question: " + question)
+    sent = bot.send_message(competitor_id, "Your turn: " + question)
+    bot.register_next_step_handler(sent, check_answer, session_id)
+
+
+def start_game(user_id, session_id):
+    competitor_id = get_competitor_id(user_id, session_id)
+
+    if len(questions[user_id]) == len(questions[competitor_id]):
+        ask_question(sessions[session_id][0], session_id)
+
+
+def ask_id(message):
+    session_id = message.text
+    if session_id not in sessions.keys():
+        bot.send_message(message.chat.id, "Error😔.There isn't such a session",
+                         parse_mode='html')
+        join_game(message)
+        return
+
+    creator_id = sessions[session_id][0]
+
+    bot.send_message(creator_id, "User has joined")
+
+    questions[message.chat.id] = []
+    sessions[session_id].append(message.chat.id)
+    set_cards(message.chat.id, session_id)
+    set_cards(creator_id, session_id)
+
+
+def join_game(message):
+    sent = bot.send_message(message.chat.id, "<b>Good👍, enter code of your session:</b>", parse_mode='html')
+    bot.register_next_step_handler(sent, ask_id)
+
+
+def create_game(message):
+    bot.send_message(message.chat.id, "<b>Well,👀 creating session...</b>", parse_mode='html')
+    # creating session
+    session_id = uuid.uuid4().hex[:5]
+    sessions[session_id] = [message.chat.id]
+
+    questions[message.chat.id] = []
+
+    bot.send_message(message.chat.id,
+                     f"Your session code: <b> {session_id} </b> \nTo continue, you need to send this code to a friend\nThen the game will start",
+                     parse_mode='html')
+
+
+def save_cards(message, session_id):
+    question_id = len(questions[message.chat.id])
+    questions[message.chat.id].append(message.text)
+
+    if question_id >= 4:
+        bot.send_message(message.chat.id, ",".join(questions[message.chat.id]))
+        start_game(message.chat.id, session_id)
+        return
+
+    sent = bot.send_message(message.chat.id, f"Enter {question_id + 2} question: ")
+    bot.register_next_step_handler(sent, save_cards, session_id)
+
+
+def set_cards(user_id, session_id):
+    bot.send_message(user_id, "In order to continue you need to enter 5 questions for the opponent")
+    sent = bot.send_message(user_id, "Enter 1 question: ")
+    bot.register_next_step_handler(sent, save_cards, session_id)
 
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
     bot.send_message(message.chat.id,
-                     'Привіт, {0.first_name}!\nЯ - <b>{1.first_name}</b> бот, який...'.format(message.from_user,
-                                                                                              bot.get_me()),
+                     'Hello, {0.first_name}!\nI am - <b>{1.first_name}</b> bot, which...'.format(message.from_user,
+                                                                                                 bot.get_me()),
                      parse_mode='html')
     main_menu(message)
 
@@ -19,107 +121,62 @@ def welcome(message):
 def main_menu(message):
     keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
 
-    button1 = types.KeyboardButton("Почати гру")
-    button2 = types.KeyboardButton("Таблиця гравців")
-    button3 = types.KeyboardButton("Допомога")
+    button1 = types.KeyboardButton("Start game")
+    button2 = types.KeyboardButton("Top players🏆")
+    button3 = types.KeyboardButton("Help🆘")
 
     keyboard.add(button1, button2, button3)
 
-    bot.send_message(message.chat.id, "Головне меню\nОбери, що будемо робити далі", reply_markup=keyboard,
+    bot.send_message(message.chat.id, "Main menu\nChoose, what to do next", reply_markup=keyboard,
                      parse_mode='html')
-
-
-@bot.message_handler(commands=['set_cards'])
-def set_cards(message):
-    user_stat = True
-    # check if user is at the game
-    if user_stat:
-        questions = [None] * 5
-        bot.send_message(message.chat.id, "Для того, щоб продовжити тобі потрібно ввести 5 питань для опонента:")
-
-    else:
-        bot.send_message(message.chat.id, "Помилка😔\nТобі спершу потрібно увійти або створити сесію",
-                         parse_mode='html')
-
-    main_menu(message)
-
-
-@bot.message_handler(commands=['do_turn'])
-def do_turn(message):
-    user_stat = False
-    # check if user is at the game
-    if user_stat:
-        # print user data
-        pass
-        # do turn
-    else:
-        bot.send_message(message.chat.id, "Помилка😔\nТобі спершу потрібно увійти або створити сесію",
-                         parse_mode='html')
 
 
 @bot.message_handler(content_types=['text'])
 def any_text(message):
     if message.chat.type == "private":
-        # check if user is at the game
-        if False:
-            bot.send_message(message.chat.id, "Помилка😔\nСпершу потрібно завершити теперішню сесію",
-                             parse_mode='html')
-
-        if message.text == "Почати гру":
+        if message.text == "Start game":
             keyboard = types.InlineKeyboardMarkup(row_width=1)
 
-            button1 = types.InlineKeyboardButton("Створити сесію", callback_data='create_game')
-            button2 = types.InlineKeyboardButton("Увійти до сесії", callback_data='join_game')
+            button1 = types.InlineKeyboardButton("Create session", callback_data='create_game')
+            button2 = types.InlineKeyboardButton("Join to the session", callback_data='join_game')
 
             keyboard.add(button1, button2)
 
-            bot.send_message(message.chat.id, "Обери, що тобі підходить", reply_markup=keyboard)
-        elif message.text == "Таблиця гравців":
+            bot.send_message(message.chat.id, "Choose, what to do next", reply_markup=keyboard)
+        elif message.text == "Top players🏆":
             bot.send_message(message.chat.id, "Скоро...")
-        elif message.text == "Допомога":
-            bot.send_message(message.chat.id, "Звернись до: @lamens")
+        elif message.text == "Help🆘":
+            bot.send_message(message.chat.id, "Creator: @lamens")
         else:
-            bot.send_message(message.chat.id, "Я не знаю такої дії  😓")
+            bot.send_message(message.chat.id, "Error😔\nI don't know what to do😓")
+            main_menu(message)
 
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_inline_room(call):
+def callback_inline(call):
     try:
         if call.message:
-            bot.edit_message_text(chat_id=call.message.chat.id,
-                                  message_id=call.message.message_id,
-                                  text="Обери, що тобі підходить",
-                                  reply_markup=None)
-
             if call.data == 'create_game':
-                bot.send_message(call.message.chat.id, "<b>Добре,👀 створюємо cесію...</b>", parse_mode='html')
-                # creating session
-                session_id = 0
+                bot.edit_message_text(chat_id=call.message.chat.id,
+                                      message_id=call.message.message_id,
+                                      text="Choose, what to do next",
+                                      reply_markup=None)
 
-                bot.send_message(call.message.chat.id,
-                                 "Код твоєї сесії: {0}\nЩоби продовжити, тобі потрібно надіслати цей код другу\nТоді гра розпочнеться".format(session_id),
-                                 parse_mode='html')
-                # wait until another user join session
-
-                wait_counter = 10
-                while False:
-                    # check if another user joined
-                    if True:
-                        break
-
-                    time.sleep(5)
-                    wait_counter += 1
-                # check if another user joined
-                if True:
-                    set_cards(call.message)
-                else:
-                    bot.send_message(call.message.chat.id,
-                                     "Час очікування, вийшов. Видаляю сесію".format(
-                                         session_id),
-                                     parse_mode='html')
+                create_game(call.message)
 
             elif call.data == 'join_game':
-                bot.send_message(call.message.chat.id, "<b>Чудово👍, введи номер сесії:</b>", parse_mode='html')
+                bot.edit_message_text(chat_id=call.message.chat.id,
+                                      message_id=call.message.message_id,
+                                      text="Choose, what to do next",
+                                      reply_markup=None)
+
+                join_game(call.message)
+
+            elif call.data == 'answer_true':
+                bot.send_message(call.message.chat.id, "OK")
+
+            elif call.data == 'answer_false':
+                bot.send_message(call.message.chat.id, "NOT OK")
 
     except Exception as wht:
         print(repr(wht))
