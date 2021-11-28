@@ -2,11 +2,21 @@ import telebot
 import config
 import uuid
 import copy
+from db import BotDB
 from telebot import types
 
 bot = telebot.TeleBot(config.TOKEN)
 questions = {}
 sessions = {}
+
+
+def print_questions(arr):
+    string = ""
+    i = 1
+    for q in arr:
+        string += f"{i}." + q + "\n"
+        i += 1
+    return string
 
 
 def get_competitor_id(user_id, session_id):
@@ -22,27 +32,39 @@ def check_answer(message, session_id):
     keyboard = types.InlineKeyboardMarkup(row_width=1)
 
     button1 = types.InlineKeyboardButton("✅True", callback_data='answer_true')
-    button2 = types.InlineKeyboardButton("👎False", callback_data='answer_false')
+    button2 = types.InlineKeyboardButton("❌False", callback_data='answer_false')
 
     keyboard.add(button1, button2)
 
     bot.send_message(competitor_id, "<b>Opponent answer: </b>" + message.text, reply_markup=keyboard, parse_mode='html')
 
-    ask_question(message.chat.id, session_id)
 
-
-def ask_question(user_id, session_id):
+def ask_question(user_id, session_id, prev_stat):
     competitor_id = get_competitor_id(user_id, session_id)
-
     question = questions[user_id][0]
 
-    if len(questions[user_id]) == 0:
-        bot.send_message(user_id, "<b>You won🥳</b>", parse_mode='html')
-        bot.send_message(competitor_id, "<b>Opponent won🤭</b>", parse_mode='html')
-        return
+    if prev_stat:
+        bot.send_message(user_id, "<b>✅You was right✅</b>", parse_mode='html')
+        questions[user_id].pop(0)
 
-    bot.send_message(user_id, "You asked question: " + question)
-    sent = bot.send_message(competitor_id, "Your turn: " + question)
+        if len(questions[user_id]) == 0:
+            dat = BotDB('StudyCardGameDatabase.db')
+
+            bot.send_message(user_id, "<b>You won🥳</b>", parse_mode='html')
+            dat.update_score(user_id, 5)
+
+            bot.send_message(competitor_id, "<b>Opponent won🤭</b>", parse_mode='html')
+            dat.update_score(competitor_id, 5 - len(questions[user_id]))
+            return
+    else:
+        bot.send_message(user_id, "<b>❌You failed this question❌</b>", parse_mode='html')
+
+    bot.send_message(competitor_id, "<b>Your questions left: </b>\n" + print_questions(questions[competitor_id]) +
+                     f"<b>Opponent questions left: {len(questions[user_id])}</b>", parse_mode='html')
+    bot.send_message(competitor_id, "<b>Wait for opponent answer!\n</b>You asked question: " + question, parse_mode='html')
+
+    sent = bot.send_message(user_id, "<b>‼️Your turn, answer the question:</b> " + question, parse_mode='html')
+
     bot.register_next_step_handler(sent, check_answer, session_id)
 
 
@@ -50,7 +72,18 @@ def start_game(user_id, session_id):
     competitor_id = get_competitor_id(user_id, session_id)
 
     if len(questions[user_id]) == len(questions[competitor_id]):
-        ask_question(sessions[session_id][0], session_id)
+        competitor_id = get_competitor_id(user_id, session_id)
+
+        question = questions[competitor_id][0]
+
+        bot.send_message(competitor_id, "<b>Your questions left: </b>\n" + print_questions(questions[competitor_id]) +
+                         f"<b>Opponent questions left: {len(questions[user_id])}</b>", parse_mode='html')
+        bot.send_message(competitor_id, "<b>Wait for opponent answer!\n</b>You asked question: " + question,
+                         parse_mode='html')
+
+        sent = bot.send_message(user_id, "<b>‼️Your turn, answer the question:</b> " + question, parse_mode='html')
+
+        bot.register_next_step_handler(sent, check_answer, session_id)
 
 
 def ask_id(message):
@@ -173,10 +206,22 @@ def callback_inline(call):
                 join_game(call.message)
 
             elif call.data == 'answer_true':
-                bot.send_message(call.message.chat.id, "OK")
+                bot.edit_message_text(chat_id=call.message.chat.id,
+                                      message_id=call.message.message_id,
+                                      text="Choose, what to do next",
+                                      reply_markup=None,
+                                      parse_mode='html')
+                #competitor_id = get_competitor_id(call.message.chat.id, list(sessions.keys())[0])
+                ask_question(call.message.chat.id, list(sessions.keys())[0], True)
 
             elif call.data == 'answer_false':
-                bot.send_message(call.message.chat.id, "NOT OK")
+                bot.edit_message_text(chat_id=call.message.chat.id,
+                                      message_id=call.message.message_id,
+                                      text="<b>Opponent answer: </b>",
+                                      reply_markup=None,
+                                      parse_mode='html')
+                #competitor_id = get_competitor_id(call.message.chat.id, list(sessions.keys())[0])
+                ask_question(call.message.chat.id, list(sessions.keys())[0], False)
 
     except Exception as wht:
         print(repr(wht))
