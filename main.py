@@ -60,11 +60,11 @@ def ask_question(user_id, session_id, prev_stat):
         if len(questions[competitor_id]) == 0:
             dat = BotDB('StudyCardGameDatabase.db')
 
-            bot.send_message(user_id, f"<b>You won🥳</b>\n<b>Total score:{5}<\b>",
+            bot.send_message(user_id, f"<b>You won🥳</b>\n<b>Your total score:{5}</b>",
                              parse_mode='html')
             dat.update_score(user_id, 5)
 
-            bot.send_message(competitor_id, f"<b>You won🥳</b>\n<b>Total score:{5 - len(questions[user_id])}<\b>",
+            bot.send_message(competitor_id, f"<b>Opponent won🤭</b>\n<b>Your total score:{5 - len(questions[user_id])}</b>",
                              parse_mode='html')
             dat.update_score(competitor_id, 5 - len(questions[user_id]))
             return
@@ -93,7 +93,8 @@ def ask_id(message):
 
     creator_id = sessions[session_id][0]
 
-    bot.send_message(creator_id, "User has joined")
+    bot.send_message(creator_id, "<b>{0.first_name}</b> has joined".format(message.from_user),
+                     parse_mode='html')
 
     questions[message.chat.id] = []
     sessions[session_id].append(message.chat.id)
@@ -124,17 +125,20 @@ def save_cards(message, session_id):
     questions[message.chat.id].append(message.text)
 
     if question_id >= 4:
-        bot.send_message(message.chat.id, ",".join(questions[message.chat.id]))
+        bot.send_message(message.chat.id, "<b>Your questions: </b>\n" + print_questions(questions[message.chat.id]),
+                        parse_mode='html')
         start_game(message.chat.id, session_id)
         return
 
-    sent = bot.send_message(message.chat.id, f"Enter {question_id + 2} question: ")
+    sent = bot.send_message(message.chat.id, f"<b>Enter {question_id + 2} question: </b>",
+                            parse_mode='html')
     bot.register_next_step_handler(sent, save_cards, session_id)
 
 
 def set_cards(user_id, session_id):
     bot.send_message(user_id, "In order to continue you need to enter 5 questions for the opponent")
-    sent = bot.send_message(user_id, "Enter 1 question: ")
+    sent = bot.send_message(user_id, f"<b>Enter {1} question: </b>",
+                            parse_mode='html')
     bot.register_next_step_handler(sent, save_cards, session_id)
 
 
@@ -144,6 +148,11 @@ def welcome(message):
                      'Hello, {0.first_name}!\nI am - <b>{1.first_name}</b> bot, which...'.format(message.from_user,
                                                                                                  bot.get_me()),
                      parse_mode='html')
+    bd = BotDB('StudyCardGameDatabase.db')
+    f = message.from_user
+
+    bd.add_user(message.chat.id, f.first_name)
+
     main_menu(message)
 
 
@@ -178,13 +187,15 @@ def any_text(message):
             score = db.score_results()
 
             bot.send_message(message.chat.id,
-                             f"\tTop 5 players:\n"+
+                             f"<b>Top 5 players:</b>\n"+
                              f"#1 🥇{score[0][0]}: {score[0][1]}\n" +
                              f"#2 🥈{score[1][0]}:  {score[1][1]}\n" +
                              f"#3 🥉{score[2][0]}:  {score[2][1]}\n" +
                              f"#4 {score[3][0]}:  {score[3][1]}\n" +
                              f"#5 {score[4][0]}:  {score[4][1]}\n"
-                             f"<b>Your total score: </b>")
+                             f"<b>Your total score: </b>{db.get_score(message.chat.id)}",
+                             parse_mode = 'html'
+            )
 
         elif message.text == "Help🆘":
             bot.send_message(message.chat.id, "Creator: @lamens")

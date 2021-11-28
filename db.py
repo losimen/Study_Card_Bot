@@ -30,6 +30,12 @@ class BotDB:
 
         return self.conn.commit()
 
+    def get_score(self, user_id):
+        result = self.cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        for r in result:
+            score = r[1]
+        return score
+
     def score_results(self):
         result = self.cursor.execute("SELECT * FROM users")
         new_array = [[]]
@@ -44,6 +50,8 @@ class BotDB:
         new_array.reverse()
 
         return new_array
+
+
 
     def update_busy(self, user_id, busy):
         self.cursor.execute("UPDATE `users` set `inGame` = ? where id = ?", (busy, user_id))
